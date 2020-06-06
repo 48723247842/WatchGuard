@@ -46,26 +46,31 @@ def watch_state_mode():
 		print( e )
 		return False
 
-
-
 class Thread( threading.Thread ):
-	def __init__(self,callback,event,interval):
+	def __init__( self , callback ,event , interval ):
 		self.callback = callback
 		self.event = event
 		self.interval = interval
 		super( Thread , self ).__init__()
 	def run( self ):
-		while not self.event.wait(self.interval):
+		while not self.event.wait( self.interval ):
 			self.callback()
 event = threading.Event()
 time_interval = Thread( watch_state_mode , event , 2 )
+time_interval.daemon = True
 time_interval.start()
 
-signal.signal( signal.SIGHUP , time_interval.join )
-signal.signal( signal.SIGILL , time_interval.join )
-signal.signal( signal.SIGINT , time_interval.join )
-signal.signal( signal.SIGPIPE , time_interval.join )
-signal.signal( signal.SIGSEGV , time_interval.join )
+def signal_handler( signal , frame ):
+	print( f"Watch Guard server.py Closed , Signal = {str( signal )}" )
+	time_interval.join()
+	sys.exit( 0 )
+
+signal.signal( signal.SIGABRT , signal_handler )
+signal.signal( signal.SIGFPE , signal_handler )
+signal.signal( signal.SIGILL , signal_handler )
+signal.signal( signal.SIGSEGV , signal_handler )
+signal.signal( signal.SIGTERM , signal_handler )
+signal.signal( signal.SIGINT , signal_handler )
 
 app = Sanic( name="Watch Guard Server" )
 
