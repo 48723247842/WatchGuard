@@ -2,29 +2,23 @@ import os
 import redis
 import json
 import time
+import threading
+from datetime import timedelta
+from pprint import pprint
+
+import signal
+from sys import exit
 
 from sanic import Sanic
 from sanic.response import json as sanic_json
 from sanic import response
 
-from buttons.buttons_blueprint import buttons_blueprint
+from api.api_blueprint import api_blueprint
 
 # https://github.com/huge-success/sanic/tree/master/examples
 # https://github.com/huge-success/sanic/blob/master/examples/try_everything.py
 
 # https://sanic.readthedocs.io/en/latest/sanic/blueprints.html
-
-app = Sanic( name="Watch Guard Server" )
-
-@app.route( "/" )
-def hello( request ):
-	return response.text( "You Found the Watch Guard Server!\n" )
-
-@app.route( "/ping" )
-def ping( request ):
-	return response.text( "pong\n" )
-
-app.blueprint( buttons_blueprint )
 
 def redis_connect():
 	try:
@@ -37,6 +31,55 @@ def redis_connect():
 		return redis_connection
 	except Exception as e:
 		return False
+
+def watch_state_mode():
+	try:
+		print( "\nWatch Guard Server --> watch_state_mode()" )
+		redis = redis_connect()
+		mode = redis.get( "STATE.MODE" )
+		if mode is None:
+			return False
+		mode = str( mode , 'utf-8' )
+		mode = json.loads( mode )
+		pprint( mode )
+	except Exception as e:
+		print( e )
+		return False
+
+
+
+class Thread( threading.Thread ):
+	def __init__(self,callback,event,interval):
+		self.callback = callback
+		self.event = event
+		self.interval = interval
+		super( Thread , self ).__init__()
+	def run( self ):
+		while not self.event.wait(self.interval):
+			self.callback()
+event = threading.Event()
+time_interval = Thread( watch_state_mode , event , 2 )
+time_interval.start()
+
+signal.signal( signal.SIGHUP , time_interval.join )
+signal.signal( signal.SIGILL , time_interval.join )
+signal.signal( signal.SIGINT , time_interval.join )
+signal.signal( signal.SIGPIPE , time_interval.join )
+signal.signal( signal.SIGSEGV , time_interval.join )
+
+app = Sanic( name="Watch Guard Server" )
+
+@app.route( "/" )
+def hello( request ):
+	return response.text( "You Found the Watch Guard Server!\n" )
+
+@app.route( "/ping" )
+def ping( request ):
+	return response.text( "pong\n" )
+
+app.blueprint( api_blueprint )
+
+
 
 def get_config( redis_connection ):
 	try:
@@ -80,6 +123,7 @@ def run_server():
 		print( "Couldn't Start Watch Guard Server" )
 		print( e )
 		return False
+
 
 def try_run_block( options ):
 	for i in range( options[ 'number_of_tries' ] ):

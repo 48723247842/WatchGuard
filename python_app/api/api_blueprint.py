@@ -5,8 +5,7 @@ from sanic import response
 import json
 import time
 import redis
-import redis_circular_list
-import requests
+#import requests
 
 def redis_connect():
 	try:
@@ -60,7 +59,7 @@ def spotify_playlists_currated( request ):
 		if mode is None:
 			raise Exception( "No STATE.MODE Key" )
 		mode = json.loads( mode )
-		if mode["type"] = "IDLE":
+		if mode["type"] == "IDLE":
 			result["message"] = "success"
 			result["mode"] = mode
 			json_result( result )
