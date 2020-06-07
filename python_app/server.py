@@ -9,11 +9,18 @@ from pprint import pprint
 import signal
 from sys import exit
 
+import requests
+json_headers = {
+	'accept': 'application/json, text/plain, */*'
+}
+
 from sanic import Sanic
 from sanic.response import json as sanic_json
 from sanic import response
 
 from api.api_blueprint import api_blueprint
+
+CACHED_STATE = None
 
 # https://github.com/huge-success/sanic/tree/master/examples
 # https://github.com/huge-success/sanic/blob/master/examples/try_everything.py
@@ -34,14 +41,47 @@ def redis_connect():
 
 def watch_state_mode():
 	try:
+		global CACHED_STATE
 		print( "\nWatch Guard Server --> watch_state_mode()" )
 		redis = redis_connect()
-		mode = redis.get( "STATE.MODE" )
-		if mode is None:
+		original_mode = redis.get( "STATE.MODE" )
+		if original_mode is None:
 			return False
-		mode = str( mode , 'utf-8' )
-		mode = json.loads( mode )
-		pprint( mode )
+		original_mode = str( original_mode , 'utf-8' )
+		original_mode = json.loads( original_mode )
+		mode = original_mode
+		print( f"{mode['type']} === {mode['name']} === STATE === {mode['state']}" )
+		status_response = requests.get( mode["control_endpoints"]["status"] , headers=json_headers )
+		status_response.raise_for_status()
+		mode["status_object"] = status_response.json()
+		if "status" not in mode["status_object"]:
+			return False
+		pprint( mode["status_object"] )
+		if mode["type"] == "spotify":
+			mode["state"] = mode["status_object"]["status"].lower()
+			if CACHED_STATE != mode["state"]:
+				print( f"State Chage == was: {CACHED_STATE} == now: {mode['state']}" )
+				CACHED_STATE = mode["state"]
+			pass
+		elif mode["type"] == "local":
+			pass
+		elif mode["type"] == "disney_plus":
+			pass
+		elif mode["type"] == "twitch":
+			pass
+		elif mode["type"] == "netflix":
+			pass
+		elif mode["type"] == "hulu":
+			pass
+		elif mode["type"] == "amazon":
+			pass
+		elif mode["type"] == "youtube":
+			pass
+		elif mode["type"] == "audiobook":
+			pass
+		elif mode["type"] == "odyssey":
+			pass
+		redis.set( "STATE.MODE" , json.dumps( mode ) )
 	except Exception as e:
 		print( e )
 		return False
@@ -56,7 +96,7 @@ class Thread( threading.Thread ):
 		while not self.event.wait( self.interval ):
 			self.callback()
 event = threading.Event()
-time_interval = Thread( watch_state_mode , event , 2 )
+time_interval = Thread( watch_state_mode , event , 3 )
 time_interval.daemon = True
 time_interval.start()
 
@@ -83,8 +123,6 @@ def ping( request ):
 	return response.text( "pong\n" )
 
 app.blueprint( api_blueprint )
-
-
 
 def get_config( redis_connection ):
 	try:
