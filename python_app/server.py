@@ -85,7 +85,6 @@ def watch_state_mode():
 			# TODO: Keep Track of Every Spotify Song Every Played
 			#		just like with local media
 			# Somehow , we don't know the current time here
-			# status_message = status_message + f' --> {mode["status"]["status"].lower()} --> time = {metadata["current_time"]}';
 			status_message = status_message + f' --> {mode["status"]["status"].lower()}';
 		elif mode["type"] == "local_tv":
 			if "file_path" in mode["status"]["status"]:
