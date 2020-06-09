@@ -1,5 +1,7 @@
 import os
+import sys
 import redis
+import redis_circular_list
 import json
 import time
 import threading
@@ -14,13 +16,27 @@ json_headers = {
 	'accept': 'application/json, text/plain, */*'
 }
 
+import base64
+
+def base64_encode( string ):
+	string_bytes = string.encode( "utf-8" )
+	base64_bytes = base64.b64encode( string_bytes )
+	base64_string = base64_bytes.decode( "utf-8" )
+	return base64_string
+
+def base64_decode( string ):
+	string_bytes = string.encode( "utf-8" )
+	base64_bytes = base64.b64decode( string_bytes )
+	message = base64_bytes.decode( "utf-8" )
+	return message
+
 from sanic import Sanic
 from sanic.response import json as sanic_json
 from sanic import response
 
 from api.api_blueprint import api_blueprint
 
-CACHED_STATE = None
+CACHED_MODE_TYPE = None
 
 # https://github.com/huge-success/sanic/tree/master/examples
 # https://github.com/huge-success/sanic/blob/master/examples/try_everything.py
@@ -41,8 +57,9 @@ def redis_connect():
 
 def watch_state_mode():
 	try:
-		global CACHED_STATE
-		print( "\nWatch Guard Server --> watch_state_mode()" )
+		global CACHED_MODE_TYPE
+		status_message = "Watch Guard Server --> watch_state_mode()"
+		# 1.) Get Current State
 		redis = redis_connect()
 		original_mode = redis.get( "STATE.MODE" )
 		if original_mode is None:
@@ -50,20 +67,39 @@ def watch_state_mode():
 		original_mode = str( original_mode , 'utf-8' )
 		original_mode = json.loads( original_mode )
 		mode = original_mode
-		print( f"{mode['type']} === {mode['name']} === STATE === {mode['state']}" )
+		status_message = status_message + f' --> {mode["type"]}'
+
+		# 2.) Call Current States' Status
 		status_response = requests.get( mode["control_endpoints"]["status"] , headers=json_headers )
 		status_response.raise_for_status()
-		mode["status_object"] = status_response.json()
-		if "status" not in mode["status_object"]:
+		mode["status"] = status_response.json()
+		if "status" not in mode["status"]:
 			return False
-		pprint( mode["status_object"] )
+
+		if CACHED_MODE_TYPE != mode["type"]:
+			print( f"Mode Type Changed == was: {CACHED_MODE_TYPE} == now: {mode['type']}" )
+			CACHED_MODE_TYPE = mode["type"]
+
+		# 3.) Update Specific State Metadata
 		if mode["type"] == "spotify":
-			mode["state"] = mode["status_object"]["status"].lower()
-			if CACHED_STATE != mode["state"]:
-				print( f"State Chage == was: {CACHED_STATE} == now: {mode['state']}" )
-				CACHED_STATE = mode["state"]
+			# TODO: Keep Track of Every Spotify Song Every Played
+			#		just like with local media
+			# Somehow , we don't know the current time here
+			# status_message = status_message + f' --> {mode["status"]["status"].lower()} --> time = {metadata["current_time"]}';
+			status_message = status_message + f' --> {mode["status"]["status"].lower()}';
+		elif mode["type"] == "local_tv":
+			if "file_path" in mode["status"]["status"]:
+				file_path_b64 = base64_encode( mode["status"]["status"]["file_path"].split( "file://" )[ 1 ] )
+				metadata_key = f'STATE.USB_STORAGE.LIBRARY.META_DATA.{file_path_b64}'
+				metadata = json.loads( str( redis.get( metadata_key ) , 'utf-8' ) )
+				metadata["current_time"] = mode["status"]["status"]["current_time"]
+				status_message = status_message + f' --> {mode["status"]["status"]["state"]} --> time = {metadata["current_time"]}';
+				redis.set( metadata_key , json.dumps( metadata ) )
+		elif mode["type"] == "local_movie":
 			pass
-		elif mode["type"] == "local":
+		elif mode["type"] == "local_audiobook":
+			pass
+		elif mode["type"] == "local_odyssey":
 			pass
 		elif mode["type"] == "disney_plus":
 			pass
@@ -77,10 +113,9 @@ def watch_state_mode():
 			pass
 		elif mode["type"] == "youtube":
 			pass
-		elif mode["type"] == "audiobook":
-			pass
-		elif mode["type"] == "odyssey":
-			pass
+
+		# 4.) Save State
+		print( status_message )
 		redis.set( "STATE.MODE" , json.dumps( mode ) )
 	except Exception as e:
 		print( e )
