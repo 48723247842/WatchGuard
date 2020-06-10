@@ -58,6 +58,7 @@ def redis_connect():
 def watch_state_mode():
 	try:
 		global CACHED_MODE_TYPE
+		CALL_NEXT = False
 		status_message = "Watch Guard Server --> watch_state_mode()"
 		# 1.) Get Current State
 		redis = redis_connect()
@@ -85,23 +86,28 @@ def watch_state_mode():
 			# TODO: Keep Track of Every Spotify Song Every Played
 			#		just like with local media
 			# Somehow , we don't know the current time here
-			status_message = status_message + f' --> {mode["status"]["status"].lower()}';
-		elif mode["type"] == "local_tv":
+			#pprint( mode )
+			status_message = status_message + f' --> {mode["status"]["status"]["status"].lower()}';
+		elif mode["type"] in [ "local_tv" , "local_movie" , "local_odyssey" ]:
+			#pprint( mode )
 			if "file_path" in mode["status"]["status"]:
 				file_path_b64 = base64_encode( mode["status"]["status"]["file_path"].split( "file://" )[ 1 ] )
 				metadata_key = f'STATE.USB_STORAGE.LIBRARY.META_DATA.{file_path_b64}'
 				metadata = json.loads( str( redis.get( metadata_key ) , 'utf-8' ) )
-				metadata["current_time"] = mode["status"]["status"]["current_time"]
-				status_message = status_message + f' --> {mode["status"]["status"]["state"]} --> time = {metadata["current_time"]}';
-				redis.set( metadata_key , json.dumps( metadata ) )
-		elif mode["type"] == "local_movie":
-			pass
-		elif mode["type"] == "local_audiobook":
-			pass
-		elif mode["type"] == "local_odyssey":
-			pass
+				#pprint( metadata )
+				current_time = int( mode["status"]["status"]["current_time"] )
+				duration = int( mode["status"]["status"]["duration"] )
+				if  current_time > 0:
+					metadata["current_time"] = current_time
+					status_message = status_message + f' --> {mode["status"]["status"]["state"]} --> time = {current_time} of {duration}';
+					redis.set( metadata_key , json.dumps( metadata ) )
+				if duration > 0:
+					if ( duration - current_time ) < 10:
+						CALL_NEXT = True
 		elif mode["type"] == "disney_plus":
-			pass
+			current_time = mode["status"]["status"]["time"]["current"]["stamp"]
+			remaining_time = mode["status"]["status"]["time"]["remaining"]["stamp"]
+			status_message = status_message + f' --> playback state unknown --> time = {current_time} = remaining = {remaining_time}';
 		elif mode["type"] == "twitch":
 			pass
 		elif mode["type"] == "netflix":
@@ -112,6 +118,11 @@ def watch_state_mode():
 			pass
 		elif mode["type"] == "youtube":
 			pass
+
+		if CALL_NEXT == True:
+			next_response = requests.get( mode["control_endpoints"]["next"] , headers=json_headers )
+			next_response.raise_for_status()
+			next_response = next_response.json()
 
 		# 4.) Save State
 		print( status_message )
